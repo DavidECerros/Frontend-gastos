@@ -1,233 +1,152 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
-  RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
-import AddBudgetModal from '../components/AddBudgetModal';
+import { useNavigation } from '@react-navigation/native';
+import CustomButton from '../components/CustomButton';
+import CustomInput from '../components/CustomInput';
 
-interface Budget {
+interface BudgetCategory {
   id: string;
   name: string;
-  amount: number;
-  spent: number;
-  active: boolean;
-  created_at: string;
+  budgetAmount: number;
+  spentAmount: number;
+  icon: string;
+  color: string;
 }
 
-export default function BudgetScreen() {
-  const { user } = useAuth();
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
+const BudgetScreen: React.FC = () => {
+  const navigation = useNavigation();
+  const [totalBudget, setTotalBudget] = useState('2500.00');
+  const [isEditing, setIsEditing] = useState(false);
 
-  const fetchBudgets = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('budgets')
-        .select(`
-          id,
-          name,
-          amount,
-          active,
-          created_at,
-          expenses!inner(amount)
-        `)
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const budgetsWithSpent = data?.map(budget => ({
-        ...budget,
-        spent: budget.expenses?.reduce((total: number, expense: any) => total + expense.amount, 0) || 0,
-      })) || [];
-
-      setBudgets(budgetsWithSpent);
-    } catch (error) {
-      console.error('Error fetching budgets:', error);
-      Alert.alert('Error', 'No se pudieron cargar los presupuestos');
+  // Datos mock de presupuesto por categorías
+  const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([
+    {
+      id: '1',
+      name: 'Alimentación',
+      budgetAmount: 600,
+      spentAmount: 450.75,
+      icon: 'restaurant-outline',
+      color: '#10B981'
+    },
+    {
+      id: '2',
+      name: 'Transporte',
+      budgetAmount: 300,
+      spentAmount: 225.00,
+      icon: 'car-outline',
+      color: '#3B82F6'
+    },
+    {
+      id: '3',
+      name: 'Entretenimiento',
+      budgetAmount: 200,
+      spentAmount: 185.25,
+      icon: 'game-controller-outline',
+      color: '#8B5CF6'
+    },
+    {
+      id: '4',
+      name: 'Servicios',
+      budgetAmount: 400,
+      spentAmount: 320.00,
+      icon: 'receipt-outline',
+      color: '#F59E0B'
+    },
+    {
+      id: '5',
+      name: 'Salud',
+      budgetAmount: 150,
+      spentAmount: 45.75,
+      icon: 'medical-outline',
+      color: '#EF4444'
     }
+  ]);
+
+  const totalBudgetAmount = budgetCategories.reduce((sum, cat) => sum + cat.budgetAmount, 0);
+  const totalSpentAmount = budgetCategories.reduce((sum, cat) => sum + cat.spentAmount, 0);
+  const remainingBudget = totalBudgetAmount - totalSpentAmount;
+  const budgetUsedPercentage = (totalSpentAmount / totalBudgetAmount) * 100;
+
+  const handleSaveBudget = () => {
+    setIsEditing(false);
+    Alert.alert('Éxito', 'Presupuesto actualizado correctamente');
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    await fetchBudgets();
-    setLoading(false);
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchBudgets();
-    setRefreshing(false);
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
-
-  const handleToggleBudget = async (budgetId: string, currentStatus: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('budgets')
-        .update({ active: !currentStatus })
-        .eq('id', budgetId);
-
-      if (error) throw error;
-
-      Alert.alert(
-        'Éxito',
-        `Presupuesto ${!currentStatus ? 'activado' : 'desactivado'} correctamente`
-      );
-      await fetchBudgets();
-    } catch (error) {
-      console.error('Error toggling budget:', error);
-      Alert.alert('Error', 'No se pudo actualizar el presupuesto');
-    }
-  };
-
-  const handleDeleteBudget = async (budgetId: string, budgetName: string) => {
-    Alert.alert(
-      'Confirmar eliminación',
-      `¿Estás seguro de que quieres eliminar el presupuesto "${budgetName}"? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('budgets')
-                .delete()
-                .eq('id', budgetId);
-
-              if (error) throw error;
-
-              Alert.alert('Éxito', 'Presupuesto eliminado correctamente');
-              await fetchBudgets();
-            } catch (error) {
-              console.error('Error deleting budget:', error);
-              Alert.alert('Error', 'No se pudo eliminar el presupuesto');
-            }
-          },
-        },
-      ]
+  const handleEditCategory = (categoryId: string, newAmount: number) => {
+    setBudgetCategories(prev =>
+      prev.map(cat =>
+        cat.id === categoryId
+          ? { ...cat, budgetAmount: newAmount }
+          : cat
+      )
     );
   };
 
-  const getProgressPercentage = (spent: number, amount: number) => {
-    return Math.min((spent / amount) * 100, 100);
-  };
-
   const getProgressColor = (percentage: number) => {
-    if (percentage < 50) return '#10b981';
-    if (percentage < 80) return '#f59e0b';
-    return '#ef4444';
+    if (percentage < 50) return '#10B981';
+    if (percentage < 80) return '#F59E0B';
+    return '#EF4444';
   };
 
-  const renderBudgetItem = ({ item }: { item: Budget }) => {
-    const progressPercentage = getProgressPercentage(item.spent, item.amount);
-    const progressColor = getProgressColor(progressPercentage);
-    const remaining = item.amount - item.spent;
+  const renderBudgetCategory = (category: BudgetCategory) => {
+    const percentage = (category.spentAmount / category.budgetAmount) * 100;
+    const remaining = category.budgetAmount - category.spentAmount;
 
     return (
-      <View style={styles.budgetCard}>
-        <View style={styles.budgetHeader}>
-          <View style={styles.budgetInfo}>
-            <Text style={styles.budgetName}>{item.name}</Text>
-            <Text style={styles.budgetAmount}>
-              ${item.amount.toFixed(2)}
-            </Text>
+      <View key={category.id} style={styles.categoryCard}>
+        <View style={styles.categoryHeader}>
+          <View style={styles.categoryInfo}>
+            <View style={[styles.categoryIcon, { backgroundColor: category.color + '20' }]}>
+              <Ionicons name={category.icon as any} size={24} color={category.color} />
+            </View>
+            <View style={styles.categoryDetails}>
+              <Text style={styles.categoryName}>{category.name}</Text>
+              <Text style={styles.categoryBudget}>
+                Presupuesto: ${category.budgetAmount.toFixed(2)}
+              </Text>
+            </View>
           </View>
-          <View style={styles.budgetActions}>
-            <TouchableOpacity
-              onPress={() => handleToggleBudget(item.id, item.active)}
-              style={[
-                styles.actionButton,
-                { backgroundColor: item.active ? '#10b981' : '#64748b' },
-              ]}
-            >
-              <Ionicons
-                name={item.active ? 'checkmark' : 'pause'}
-                size={16}
-                color="white"
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleDeleteBudget(item.id, item.name)}
-              style={[styles.actionButton, { backgroundColor: '#ef4444' }]}
-            >
-              <Ionicons name="trash-outline" size={16} color="white" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.editButton}>
+            <Ionicons name="pencil-outline" size={16} color="#64748B" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
-            <View
+            <View 
               style={[
-                styles.progressFill,
-                {
-                  width: `${progressPercentage}%`,
-                  backgroundColor: progressColor,
-                },
-              ]}
+                styles.progressFill, 
+                { 
+                  width: `${Math.min(percentage, 100)}%`,
+                  backgroundColor: getProgressColor(percentage)
+                }
+              ]} 
             />
           </View>
           <Text style={styles.progressText}>
-            {progressPercentage.toFixed(1)}%
+            {percentage.toFixed(0)}%
           </Text>
         </View>
 
-        <View style={styles.budgetDetails}>
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Gastado</Text>
-            <Text style={[styles.detailValue, { color: '#ef4444' }]}>
-              ${item.spent.toFixed(2)}
+        <View style={styles.categoryFooter}>
+          <View style={styles.amountInfo}>
+            <Text style={styles.spentAmount}>
+              Gastado: ${category.spentAmount.toFixed(2)}
             </Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Restante</Text>
-            <Text
-              style={[
-                styles.detailValue,
-                { color: remaining >= 0 ? '#10b981' : '#ef4444' },
-              ]}
-            >
-              ${remaining.toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.statusContainer}>
-          <View
-            style={[
-              styles.statusBadge,
-              {
-                backgroundColor: item.active ? '#dcfce7' : '#f1f5f9',
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.statusText,
-                { color: item.active ? '#16a34a' : '#64748b' },
-              ]}
-            >
-              {item.active ? 'Activo' : 'Inactivo'}
+            <Text style={[
+              styles.remainingAmount,
+              { color: remaining >= 0 ? '#10B981' : '#EF4444' }
+            ]}>
+              {remaining >= 0 ? 'Disponible' : 'Excedido'}: ${Math.abs(remaining).toFixed(2)}
             </Text>
           </View>
         </View>
@@ -235,144 +154,146 @@ export default function BudgetScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1e3a8a" />
-        <Text style={styles.loadingText}>Cargando presupuestos...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Presupuestos</Text>
         <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setModalVisible(true)}
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
         >
-          <Ionicons name="add" size={24} color="white" />
+          <Ionicons name="arrow-back" size={24} color="#1E3A8A" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Presupuesto</Text>
+        <TouchableOpacity
+          style={styles.editHeaderButton}
+          onPress={() => setIsEditing(!isEditing)}
+        >
+          <Ionicons 
+            name={isEditing ? "checkmark" : "pencil-outline"} 
+            size={24} 
+            color="#1E3A8A" 
+          />
         </TouchableOpacity>
       </View>
 
-      {budgets.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="wallet-outline" size={64} color="#cbd5e1" />
-          <Text style={styles.emptyTitle}>No tienes presupuestos</Text>
-          <Text style={styles.emptySubtitle}>
-            Crea tu primer presupuesto para empezar a controlar tus gastos
-          </Text>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => setModalVisible(true)}
-          >
-            <Text style={styles.createButtonText}>Crear Presupuesto</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={budgets}
-          renderItem={renderBudgetItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Budget Overview */}
+        <View style={styles.overviewCard}>
+          <Text style={styles.overviewTitle}>Resumen del Presupuesto</Text>
+          
+          <View style={styles.budgetSummary}>
+            <View style={styles.budgetItem}>
+              <Text style={styles.budgetLabel}>Presupuesto Total</Text>
+              <Text style={styles.budgetValue}>${totalBudgetAmount.toFixed(2)}</Text>
+            </View>
+            <View style={styles.budgetItem}>
+              <Text style={styles.budgetLabel}>Total Gastado</Text>
+              <Text style={[styles.budgetValue, { color: '#EF4444' }]}>
+                ${totalSpentAmount.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.budgetItem}>
+              <Text style={styles.budgetLabel}>Disponible</Text>
+              <Text style={[
+                styles.budgetValue, 
+                { color: remainingBudget >= 0 ? '#10B981' : '#EF4444' }
+              ]}>
+                ${remainingBudget.toFixed(2)}
+              </Text>
+            </View>
+          </View>
 
-      <AddBudgetModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onBudgetAdded={() => {
-          setModalVisible(false);
-          fetchBudgets();
-        }}
-      />
+          {/* Overall Progress */}
+          <View style={styles.overallProgress}>
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${Math.min(budgetUsedPercentage, 100)}%`,
+                      backgroundColor: getProgressColor(budgetUsedPercentage)
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {budgetUsedPercentage.toFixed(0)}%
+              </Text>
+            </View>
+            <Text style={styles.progressLabel}>
+              {budgetUsedPercentage > 100 ? 'Presupuesto excedido' : 'del presupuesto utilizado'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Categories Budget */}
+        <View style={styles.categoriesSection}>
+          <Text style={styles.sectionTitle}>Presupuesto por Categorías</Text>
+          
+          {budgetCategories.map(renderBudgetCategory)}
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.actionsSection}>
+          <CustomButton
+            title="Agregar Nueva Categoría"
+            onPress={() => {
+              Alert.alert('Próximamente', 'Esta funcionalidad estará disponible pronto');
+            }}
+            style={styles.actionButton}
+            variant="outline"
+          />
+          
+          <CustomButton
+            title="Ver Historial de Gastos"
+            onPress={() => navigation.navigate('Expenses' as never)}
+            style={styles.actionButton}
+          />
+        </View>
+      </ScrollView>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
-    backgroundColor: '#1e3a8a',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  title: {
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: 'white',
+    color: '#1E293B',
   },
-  addButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  editHeaderButton: {
+    padding: 8,
+    backgroundColor: '#E0E7FF',
     borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  loadingContainer: {
+  content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#64748b',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: '#64748b',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  createButton: {
-    backgroundColor: '#1e3a8a',
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginTop: 24,
-  },
-  createButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  listContainer: {
+  overviewCard: {
+    backgroundColor: '#FFFFFF',
+    margin: 20,
     padding: 20,
-  },
-  budgetCard: {
-    backgroundColor: 'white',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -382,45 +303,47 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  budgetHeader: {
+  overviewTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  budgetSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  budgetInfo: {
+  budgetItem: {
+    alignItems: 'center',
     flex: 1,
   },
-  budgetName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
+  budgetLabel: {
+    fontSize: 12,
+    color: '#64748B',
     marginBottom: 4,
+    textAlign: 'center',
   },
-  budgetAmount: {
+  budgetValue: {
     fontSize: 16,
-    color: '#64748b',
+    fontWeight: 'bold',
+    color: '#1E293B',
+    textAlign: 'center',
   },
-  budgetActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    borderRadius: 8,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
+  overallProgress: {
     alignItems: 'center',
-    marginLeft: 8,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    width: '100%',
+    marginBottom: 8,
   },
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#E2E8F0',
     borderRadius: 4,
     marginRight: 12,
   },
@@ -430,37 +353,96 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#64748b',
+    fontWeight: '600',
+    color: '#1E293B',
     minWidth: 40,
+    textAlign: 'right',
   },
-  budgetDetails: {
+  progressLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  categoriesSection: {
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  categoryCard: {
+    backgroundColor: '#FFFFFF',
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  detailItem: {
+  categoryInfo: {
+    flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
-  detailLabel: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 4,
+  categoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  detailValue: {
+  categoryDetails: {
+    flex: 1,
+  },
+  categoryName: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 2,
   },
-  statusContainer: {
-    alignItems: 'flex-start',
+  categoryBudget: {
+    fontSize: 14,
+    color: '#64748B',
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+  editButton: {
+    padding: 8,
   },
-  statusText: {
-    fontSize: 12,
+  categoryFooter: {
+    marginTop: 12,
+  },
+  amountInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  spentAmount: {
+    fontSize: 14,
+    color: '#EF4444',
+  },
+  remainingAmount: {
+    fontSize: 14,
     fontWeight: '500',
   },
+  actionsSection: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  actionButton: {
+    marginBottom: 12,
+  },
 });
+
+export default BudgetScreen;

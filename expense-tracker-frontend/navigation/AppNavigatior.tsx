@@ -1,61 +1,87 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 
-// Screens
-import LoadingScreen from '../screens/LoadingScreen';
+// Import screens
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import AddExpenseScreen from '../screens/AddExpenseScreen';
+import ExpensesScreen from '../screens/ExpensesScreen';
 import BudgetScreen from '../screens/BudgetScreen';
+import LoadingScreen from '../screens/LoadingScreen';
 
-const Stack = createStackNavigator();
+export type RootStackParamList = {
+  Auth: undefined;
+  Main: undefined;
+  Login: undefined;
+  Register: undefined;
+  Dashboard: undefined;
+  AddExpense: undefined;
+  Expenses: undefined;
+  Budget: undefined;
+  Loading: undefined;
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
+const AuthStack = createNativeStackNavigator();
 
-function AuthStack() {
+// Auth Stack Navigator
+const AuthStackNavigator = () => {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+    </AuthStack.Navigator>
   );
-}
+};
 
-function MainTabs() {
+// Main Tab Navigator
+const MainTabNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
+        headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
-          
-          if (route.name === 'Dashboard') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Budgets') {
-            iconName = focused ? 'wallet' : 'wallet-outline';
-          } else {
-            iconName = 'ellipse-outline';
+
+          switch (route.name) {
+            case 'Dashboard':
+              iconName = focused ? 'home' : 'home-outline';
+              break;
+            case 'Expenses':
+              iconName = focused ? 'receipt' : 'receipt-outline';
+              break;
+            case 'AddExpense':
+              iconName = focused ? 'add-circle' : 'add-circle-outline';
+              break;
+            case 'Budget':
+              iconName = focused ? 'pie-chart' : 'pie-chart-outline';
+              break;
+            default:
+              iconName = 'circle-outline';
           }
-          
+
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#1e3a8a',
-        tabBarInactiveTintColor: '#64748b',
+        tabBarActiveTintColor: '#1E3A8A',
+        tabBarInactiveTintColor: '#64748B',
         tabBarStyle: {
-          backgroundColor: 'white',
+          backgroundColor: '#FFFFFF',
+          borderTopColor: '#E2E8F0',
           borderTopWidth: 1,
-          borderTopColor: '#e2e8f0',
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+          height: 70,
         },
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '500',
         },
-        headerShown: false,
       })}
     >
       <Tab.Screen 
@@ -66,17 +92,32 @@ function MainTabs() {
         }}
       />
       <Tab.Screen 
-        name="Budgets" 
+        name="Expenses" 
+        component={ExpensesScreen}
+        options={{
+          tabBarLabel: 'Gastos',
+        }}
+      />
+      <Tab.Screen 
+        name="AddExpense" 
+        component={AddExpenseScreen}
+        options={{
+          tabBarLabel: 'Agregar',
+        }}
+      />
+      <Tab.Screen 
+        name="Budget" 
         component={BudgetScreen}
         options={{
-          tabBarLabel: 'Presupuestos',
+          tabBarLabel: 'Presupuesto',
         }}
       />
     </Tab.Navigator>
   );
-}
+};
 
-export default function AppNavigator() {
+// Main App Navigator
+const AppNavigation: React.FC = () => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -85,7 +126,17 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      {user ? <MainTabs /> : <AuthStack />}
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {user ? (
+          // User is signed in
+          <Stack.Screen name="Main" component={MainTabNavigator} />
+        ) : (
+          // User is not signed in
+          <Stack.Screen name="Auth" component={AuthStackNavigator} />
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
-}
+};
+
+export default AppNavigation;

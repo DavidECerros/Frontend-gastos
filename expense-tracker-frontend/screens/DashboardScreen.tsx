@@ -5,366 +5,341 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
+  Dimensions,
   RefreshControl,
-  ActivityIndicator
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { useBudgets } from '../hooks/useBudgets';
-import { useExpenses } from '../hooks/useExpenses';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import CustomButton from '../components/CustomButton';
 
-type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Dashboard'>;
+const { width } = Dimensions.get('window');
 
-interface Props {
-  navigation: DashboardScreenNavigationProp;
+interface QuickStat {
+  id: string;
+  title: string;
+  value: string;
+  icon: string;
+  color: string;
+  change?: string;
+  changeType?: 'increase' | 'decrease';
 }
 
-const DashboardScreen: React.FC<Props> = ({ navigation }) => {
+interface RecentExpense {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  date: string;
+  icon: string;
+}
+
+const DashboardScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { user, signOut } = useAuth();
-  const { budgets, loading: budgetsLoading, fetchBudgets, getBudgetUsagePercentage } = useBudgets();
-  const { expenses, loading: expensesLoading, fetchExpenses, getTotalByBudget } = useExpenses();
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleSignOut = async () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro de que quieres cerrar sesión?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Cerrar Sesión', onPress: signOut }
-      ]
-    );
-  };
+  // Mock data - Replace with real data from Supabase later
+  const [quickStats] = useState<QuickStat[]>([
+    {
+      id: '1',
+      title: 'Balance Total',
+      value: '$2,274.25',
+      icon: 'wallet-outline',
+      color: '#10B981',
+      change: '+5.2%',
+      changeType: 'increase'
+    },
+    {
+      id: '2',
+      title: 'Gastos del Mes',
+      value: '$1,226.75',
+      icon: 'trending-down-outline',
+      color: '#EF4444',
+      change: '+12.3%',
+      changeType: 'increase'
+    },
+    {
+      id: '3',
+      title: 'Presupuesto',
+      value: '$2,500.00',
+      icon: 'pie-chart-outline',
+      color: '#3B82F6',
+      change: '51% usado',
+      changeType: 'decrease'
+    },
+    {
+      id: '4',
+      title: 'Ahorros',
+      value: '$847.50',
+      icon: 'trending-up-outline',
+      color: '#8B5CF6',
+      change: '+8.7%',
+      changeType: 'increase'
+    }
+  ]);
 
-  const onRefresh = async () => {
+  const [recentExpenses] = useState<RecentExpense[]>([
+    {
+      id: '1',
+      title: 'Supermercado Walmart',
+      amount: 85.50,
+      category: 'Alimentación',
+      date: '2024-01-15',
+      icon: 'restaurant-outline'
+    },
+    {
+      id: '2',
+      title: 'Gasolina Shell',
+      amount: 45.00,
+      category: 'Transporte',
+      date: '2024-01-14',
+      icon: 'car-outline'
+    },
+    {
+      id: '3',
+      title: 'Netflix',
+      amount: 15.99,
+      category: 'Entretenimiento',
+      date: '2024-01-13',
+      icon: 'play-outline'
+    }
+  ];
+
+  const onRefresh = () => {
     setRefreshing(true);
-    await Promise.all([fetchBudgets(), fetchExpenses()]);
-    setRefreshing(false);
+    // Simulate data refresh
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1500);
   };
 
-  const getTotalExpenses = () => {
-    return expenses.reduce((total, expense) => total + expense.amount, 0);
+  const handleLogout = () => {
+    signOut();
   };
 
-  const getTotalBudgets = () => {
-    return budgets.reduce((total, budget) => total + budget.total_amount, 0);
-  };
+  const quickActions = [
+    {
+      id: '1',
+      title: 'Agregar Gasto',
+      icon: 'add-circle-outline',
+      color: '#EF4444',
+      onPress: () => navigation.navigate('AddExpense' as never)
+    },
+    {
+      id: '2',
+      title: 'Ver Gastos',
+      icon: 'receipt-outline',
+      color: '#3B82F6',
+      onPress: () => navigation.navigate('Expenses' as never)
+    },
+    {
+      id: '3',
+      title: 'Presupuesto',
+      icon: 'pie-chart-outline',
+      color: '#8B5CF6',
+      onPress: () => navigation.navigate('Budget' as never)
+    },
+    {
+      id: '4',
+      title: 'Reportes',
+      icon: 'bar-chart-outline',
+      color: '#10B981',
+      onPress: () => {
+        // TODO: Navigate to reports screen
+        console.log('Navigate to reports');
+      }
+    }
+  ];
 
-  const getRecentExpenses = () => {
-    return expenses.slice(0, 5);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-HN', {
-      style: 'currency',
-      currency: 'HNL'
-    }).format(amount);
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-HN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
-
-  if (budgetsLoading || expensesLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1e3a8a" />
-          <Text style={styles.loadingText}>Cargando...</Text>
+  const renderQuickStat = (stat: QuickStat) => (
+    <View key={stat.id} style={styles.statCard}>
+      <View style={styles.statHeader}>
+        <View style={[styles.statIcon, { backgroundColor: stat.color + '20' }]}>
+          <Ionicons name={stat.icon as any} size={24} color={stat.color} />
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.welcomeText}>Hola, {user?.email?.split('@')[0]}</Text>
-            <Text style={styles.dateText}>
-              {new Date().toLocaleDateString('es-HN', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
+        {stat.change && (
+          <View style={[
+            styles.changeIndicator,
+            { backgroundColor: stat.changeType === 'increase' ? '#10B98120' : '#EF444420' }
+          ]}>
+            <Ionicons 
+              name={stat.changeType === 'increase' ? 'arrow-up' : 'arrow-down'} 
+              size={12} 
+              color={stat.changeType === 'increase' ? '#10B981' : '#EF4444'} 
+            />
+            <Text style={[
+              styles.changeText,
+              { color: stat.changeType === 'increase' ? '#10B981' : '#EF4444' }
+            ]}>
+              {stat.change}
             </Text>
           </View>
-          <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
-            <Ionicons name="log-out-outline" size={24} color="#1e3a8a" />
-          </TouchableOpacity>
-        </View>
+        )}
+      </View>
+      <Text style={styles.statValue}>{stat.value}</Text>
+      <Text style={styles.statTitle}>{stat.title}</Text>
+    </View>
+  );
 
-        {/* Summary Cards */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryCard}>
-            <Ionicons name="wallet-outline" size={24} color="#1e3a8a" />
-            <Text style={styles.summaryAmount}>{formatCurrency(getTotalBudgets())}</Text>
-            <Text style={styles.summaryLabel}>Total Presupuestos</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="card-outline" size={24} color="#dc2626" />
-            <Text style={styles.summaryAmount}>{formatCurrency(getTotalExpenses())}</Text>
-            <Text style={styles.summaryLabel}>Total Gastos</Text>
-          </View>
+  const renderRecentExpense = (expense: RecentExpense) => (
+    <TouchableOpacity key={expense.id} style={styles.expenseItem}>
+      <View style={styles.expenseIcon}>
+        <Ionicons name={expense.icon as any} size={20} color="#1E3A8A" />
+      </View>
+      <View style={styles.expenseDetails}>
+        <Text style={styles.expenseTitle}>{expense.title}</Text>
+        <Text style={styles.expenseCategory}>{expense.category}</Text>
+      </View>
+      <View style={styles.expenseAmount}>
+        <Text style={styles.expenseValue}>-${expense.amount.toFixed(2)}</Text>
+        <Text style={styles.expenseDate}>
+          {new Date(expense.date).toLocaleDateString('es-ES', { 
+            day: '2-digit', 
+            month: '2-digit' 
+          })}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderQuickAction = (action: any) => (
+    <TouchableOpacity 
+      key={action.id} 
+      style={styles.actionButton}
+      onPress={action.onPress}
+    >
+      <View style={[styles.actionIcon, { backgroundColor: action.color + '20' }]}>
+        <Ionicons name={action.icon} size={24} color={action.color} />
+      </View>
+      <Text style={styles.actionTitle}>{action.title}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.greeting}>¡Hola!</Text>
+          <Text style={styles.userName}>{user?.email || 'Usuario'}</Text>
+        </View>
+        <TouchableOpacity style={styles.profileButton} onPress={handleLogout}>
+          <Ionicons name="person-outline" size={24} color="#1E3A8A" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#1E3A8A']}
+          />
+        }
+      >
+        {/* Quick Stats */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Resumen Financiero</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.statsContainer}
+          >
+            {quickStats.map(renderQuickStat)}
+          </ScrollView>
         </View>
 
         {/* Quick Actions */}
-        <View style={styles.quickActionsContainer}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={() => navigation.navigate('Budget')}
-            >
-              <Ionicons name="add-circle-outline" size={32} color="#1e3a8a" />
-              <Text style={styles.quickActionText}>Crear Presupuesto</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={() => {
-                if (budgets.length > 0) {
-                  navigation.navigate('AddExpense', { budgetId: budgets[0].id });
-                } else {
-                  Alert.alert('Sin presupuestos', 'Primero debes crear un presupuesto para agregar gastos.');
-                }
-              }}
-            >
-              <Ionicons name="receipt-outline" size={32} color="#1e3a8a" />
-              <Text style={styles.quickActionText}>Agregar Gasto</Text>
-            </TouchableOpacity>
+          <View style={styles.actionsGrid}>
+            {quickActions.map(renderQuickAction)}
           </View>
-        </View>
-
-        {/* Budgets Overview */}
-        <View style={styles.budgetsContainer}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mis Presupuestos</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Budget')}>
-              <Text style={styles.viewAllText}>Ver todos</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {budgets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="wallet-outline" size={48} color="#9ca3af" />
-              <Text style={styles.emptyStateText}>No tienes presupuestos aún</Text>
-              <Text style={styles.emptyStateSubtext}>
-                Crea tu primer presupuesto para comenzar a gestionar tus gastos
-              </Text>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={() => navigation.navigate('Budget')}
-              >
-                <Text style={styles.createButtonText}>Crear Presupuesto</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            budgets.slice(0, 3).map((budget) => {
-              const usagePercentage = getBudgetUsagePercentage(budget);
-              const isOverBudget = usagePercentage > 100;
-              
-              return (
-                <TouchableOpacity
-                  key={budget.id}
-                  style={styles.budgetCard}
-                  onPress={() => navigation.navigate('BudgetDetail', { budgetId: budget.id })}
-                >
-                  <View style={styles.budgetHeader}>
-                    <Text style={styles.budgetName}>{budget.name}</Text>
-                    <Text style={styles.budgetCategory}>{budget.category}</Text>
-                  </View>
-                  <View style={styles.budgetAmount}>
-                    <Text style={styles.budgetSpent}>
-                      {formatCurrency(budget.current_amount)}
-                    </Text>
-                    <Text style={styles.budgetTotal}>
-                      de {formatCurrency(budget.total_amount)}
-                    </Text>
-                  </View>
-                  <View style={styles.progressBarContainer}>
-                    <View
-                      style={[
-                        styles.progressBar,
-                        {
-                          width: `${Math.min(usagePercentage, 100)}%`,
-                          backgroundColor: isOverBudget ? '#dc2626' : '#1e3a8a'
-                        }
-                      ]}
-                    />
-                  </View>
-                  <Text style={[
-                    styles.budgetPercentage,
-                    { color: isOverBudget ? '#dc2626' : '#1e3a8a' }
-                  ]}>
-                    {usagePercentage.toFixed(1)}% usado
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          )}
         </View>
 
         {/* Recent Expenses */}
-        <View style={styles.expensesContainer}>
+        <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Gastos Recientes</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Expenses')}>
-              <Text style={styles.viewAllText}>Ver todos</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Expenses' as never)}>
+              <Text style={styles.seeAllText}>Ver todos</Text>
             </TouchableOpacity>
           </View>
-          
-          {expenses.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={48} color="#9ca3af" />
-              <Text style={styles.emptyStateText}>No tienes gastos registrados</Text>
-            </View>
-          ) : (
-            getRecentExpenses().map((expense) => (
-              <View key={expense.id} style={styles.expenseItem}>
-                <View style={styles.expenseIcon}>
-                  <Ionicons name="receipt" size={20} color="#1e3a8a" />
-                </View>
-                <View style={styles.expenseDetails}>
-                  <Text style={styles.expenseDescription}>{expense.description}</Text>
-                  <Text style={styles.expenseCategory}>{expense.category}</Text>
-                  <Text style={styles.expenseDate}>{formatDate(expense.date)}</Text>
-                </View>
-                <Text style={styles.expenseAmount}>
-                  -{formatCurrency(expense.amount)}
+          <View style={styles.recentExpensesContainer}>
+            {recentExpenses.map(renderRecentExpense)}
+          </View>
+        </View>
+
+        {/* Monthly Summary Card */}
+        <View style={styles.section}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Resumen de Enero</Text>
+            <View style={styles.summaryContent}>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryLabel}>Ingresos</Text>
+                <Text style={[styles.summaryValue, { color: '#10B981' }]}>+$3,500.00</Text>
+              </View>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryLabel}>Gastos</Text>
+                <Text style={[styles.summaryValue, { color: '#EF4444' }]}>-$1,226.75</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryLabel}>Balance</Text>
+                <Text style={[styles.summaryValue, { color: '#1E293B', fontWeight: 'bold' }]}>
+                  $2,273.25
                 </Text>
               </View>
-            ))
-          )}
+            </View>
+          </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#64748b',
-  },
-  scrollView: {
-    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff',
-    marginBottom: 8,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
   },
-  welcomeText: {
+  headerLeft: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 16,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  userName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
-    textTransform: 'capitalize',
+    color: '#1E293B',
   },
-  dateText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 4,
-    textTransform: 'capitalize',
-  },
-  signOutButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
-  },
-  summaryContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 24,
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 12,
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E0E7FF',
+    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  summaryAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 8,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  quickActionsContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  quickActionButton: {
+  content: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  quickActionText: {
-    fontSize: 14,
-    color: '#1e293b',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  budgetsContainer: {
+  section: {
     paddingHorizontal: 20,
     marginBottom: 24,
   },
@@ -374,128 +349,129 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  viewAllText: {
-    fontSize: 14,
-    color: '#1e3a8a',
-    fontWeight: '500',
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
   },
-  emptyState: {
-    backgroundColor: '#ffffff',
-    padding: 32,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  emptyStateText: {
+  seeAllText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#64748b',
-    marginTop: 12,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  createButton: {
-    backgroundColor: '#1e3a8a',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  createButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
+    color: '#1E3A8A',
     fontWeight: '500',
   },
-  budgetCard: {
-    backgroundColor: '#ffffff',
+  statsContainer: {
+    paddingRight: 20,
+  },
+  statCard: {
+    backgroundColor: '#FFFFFF',
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 16,
+    marginRight: 16,
+    width: width * 0.4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  budgetHeader: {
+  statHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  budgetName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  budgetCategory: {
-    fontSize: 12,
-    color: '#64748b',
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  budgetAmount: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
     marginBottom: 12,
   },
-  budgetSpent: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  budgetTotal: {
-    fontSize: 14,
-    color: '#64748b',
-    marginLeft: 4,
+  changeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  progressBarContainer: {
-    height: 6,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 3,
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  budgetPercentage: {
+  changeText: {
     fontSize: 12,
     fontWeight: '500',
+    marginLeft: 2,
   },
-  expensesContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  statTitle: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  actionButton: {
+    backgroundColor: '#FFFFFF',
+    width: (width - 60) / 2,
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  actionTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  recentExpensesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   expenseItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   expenseIcon: {
     width: 40,
     height: 40,
-    backgroundColor: '#f1f5f9',
     borderRadius: 20,
+    backgroundColor: '#E0E7FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -503,25 +479,69 @@ const styles = StyleSheet.create({
   expenseDetails: {
     flex: 1,
   },
-  expenseDescription: {
-    fontSize: 14,
+  expenseTitle: {
+    fontSize: 16,
     fontWeight: '500',
-    color: '#1e293b',
+    color: '#1E293B',
+    marginBottom: 2,
   },
   expenseCategory: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  expenseDate: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginTop: 2,
+    fontSize: 14,
+    color: '#64748B',
   },
   expenseAmount: {
-    fontSize: 14,
+    alignItems: 'flex-end',
+  },
+  expenseValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#EF4444',
+    marginBottom: 2,
+  },
+  expenseDate: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  summaryContent: {
+    gap: 12,
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 16,
+    color: '#64748B',
+  },
+  summaryValue: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#dc2626',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 4,
   },
 });
 
