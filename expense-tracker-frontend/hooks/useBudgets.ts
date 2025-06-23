@@ -1,105 +1,221 @@
-import { useState, useEffect, useCallback } from 'react';
-import { apiService, Budget, CreateBudgetRequest, Expense } from '../services/api';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+
+export interface Budget {
+  id: string;
+  user_id: string;
+  name: string;
+  total_amount: number;
+  current_amount: number;
+  category: string;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBudgetData {
+  name: string;
+  total_amount: number;
+  category: string;
+  start_date: string;
+  end_date: string;
+}
+
+export interface UpdateBudgetData {
+  name?: string;
+  total_amount?: number;
+  category?: string;
+  start_date?: string;
+  end_date?: string;
+}
 
 export const useBudgets = () => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
-  const loadBudgets = useCallback(async () => {
+  // Obtener todos los presupuestos del usuario
+  const fetchBudgets = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setError(null);
+
     try {
-      setLoading(true);
-      setError(null);
-      const data = await apiService.getBudgets();
-      setBudgets(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar presupuestos');
+      const { data, error } = await supabase
+        .from('budgets')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setBudgets(data || []);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  const addBudget = async (budget: CreateBudgetRequest) => {
+  // Crear un nuevo presupuesto
+  const createBudget = async (budgetData: CreateBudgetData): Promise<Budget | null> => {
+    if (!user) return null;
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const newBudget = await apiService.createBudget(budget);
-      setBudgets(prev => [newBudget, ...prev]);
-      return newBudget;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error al crear presupuesto';
-      setError(errorMessage);
-      throw new Error(errorMessage);
+      const { data, error } = await supabase
+        .from('budgets')
+        .insert([{
+          ...budgetData,
+          user_id: user.id,
+          current_amount: 0
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setBudgets(prev => [data, ...prev]);
+      return data;
+    } catch (err: any) {
+      setError(err.message);
+      return null;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateBudget = async (id: string, updates: Partial<CreateBudgetRequest>) => {
+  // Actualizar un presupuesto
+  const updateBudget = async (id: string, budgetData: UpdateBudgetData): Promise<boolean> => {
+    if (!user) return false;
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const updatedBudget = await apiService.updateBudget(id, updates);
+      const { data, error } = await supabase
+        .from('budgets')
+        .update({
+          ...budgetData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
       setBudgets(prev => 
         prev.map(budget => 
-          budget.id === id ? updatedBudget : budget
+          budget.id === id ? data : budget
         )
       );
-      return updatedBudget;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error al actualizar presupuesto';
-      setError(errorMessage);
-      throw new Error(errorMessage);
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const deleteBudget = async (id: string) => {
+  // Eliminar un presupuesto
+  const deleteBudget = async (id: string): Promise<boolean> => {
+    if (!user) return false;
+
+    setLoading(true);
+    setError(null);
+
     try {
-      await apiService.deleteBudget(id);
+      const { error } = await supabase
+        .from('budgets')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
       setBudgets(prev => prev.filter(budget => budget.id !== id));
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar presupuesto';
-      setError(errorMessage);
-      throw new Error(errorMessage);
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getTotalBudgets = () => {
-    return budgets.reduce((total, budget) => total + budget.amount, 0);
-  };
+  // Actualizar el current_amount de un presupuesto
+  const updateCurrentAmount = async (id: string, amount: number): Promise<boolean> => {
+    if (!user) return false;
 
-  const getBudgetWithExpenses = async (budgetId: string) => {
     try {
-      const expenses = await apiService.getExpensesByBudget(budgetId);
-      const budget = budgets.find(b => b.id === budgetId);
-      
-      if (!budget) throw new Error('Presupuesto no encontrado');
-      
-      const totalSpent = expenses.reduce((total, expense) => total + expense.amount, 0);
-      const remaining = budget.amount - totalSpent;
-      const percentage = budget.amount > 0 ? (totalSpent / budget.amount) * 100 : 0;
-      
-      return {
-        budget,
-        expenses,
-        totalSpent,
-        remaining,
-        percentage,
-      };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error al obtener presupuesto con gastos';
-      setError(errorMessage);
-      throw new Error(errorMessage);
+      const { data, error } = await supabase
+        .from('budgets')
+        .update({
+          current_amount: amount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setBudgets(prev => 
+        prev.map(budget => 
+          budget.id === id ? data : budget
+        )
+      );
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
     }
+  };
+
+  // Obtener presupuesto por ID
+  const getBudgetById = (id: string): Budget | undefined => {
+    return budgets.find(budget => budget.id === id);
+  };
+
+  // Obtener presupuestos activos (que no han expirado)
+  const getActiveBudgets = (): Budget[] => {
+    const now = new Date();
+    return budgets.filter(budget => new Date(budget.end_date) >= now);
+  };
+
+  // Obtener porcentaje usado del presupuesto
+  const getBudgetUsagePercentage = (budget: Budget): number => {
+    if (budget.total_amount === 0) return 0;
+    return (budget.current_amount / budget.total_amount) * 100;
   };
 
   useEffect(() => {
-    loadBudgets();
-  }, [loadBudgets]);
+    if (user) {
+      fetchBudgets();
+    }
+  }, [user]);
 
   return {
     budgets,
     loading,
     error,
-    loadBudgets,
-    addBudget,
+    fetchBudgets,
+    createBudget,
     updateBudget,
     deleteBudget,
-    getTotalBudgets,
-    getBudgetWithExpenses,
+    updateCurrentAmount,
+    getBudgetById,
+    getActiveBudgets,
+    getBudgetUsagePercentage
   };
 };

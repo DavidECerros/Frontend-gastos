@@ -1,141 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-  FlatList,
   Alert,
+  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
-import AddExpenseModal from '../components/AddExpenseModal';
+import { useAuth } from '../contexts/AuthContext';
+import { useBudgets } from '../hooks/useBudgets';
+import { useExpenses } from '../hooks/useExpenses';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
-interface Budget {
-  id: string;
-  name: string;
-  amount: number;
-  spent: number;
+type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Dashboard'>;
+
+interface Props {
+  navigation: DashboardScreenNavigationProp;
 }
 
-interface Expense {
-  id: string;
-  description: string;
-  amount: number;
-  category: string;
-  created_at: string;
-  budget: {
-    name: string;
-  };
-}
-
-interface DashboardData {
-  totalBudget: number;
-  totalSpent: number;
-  activeBudgets: number;
-  recentExpenses: Expense[];
-  budgets: Budget[];
-}
-
-export default function DashboardScreen() {
+const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const { user, signOut } = useAuth();
-  const [data, setData] = useState<DashboardData>({
-    totalBudget: 0,
-    totalSpent: 0,
-    activeBudgets: 0,
-    recentExpenses: [],
-    budgets: [],
-  });
-  const [loading, setLoading] = useState(true);
+  const { budgets, loading: budgetsLoading, fetchBudgets, getBudgetUsagePercentage } = useBudgets();
+  const { expenses, loading: expensesLoading, fetchExpenses, getTotalByBudget } = useExpenses();
   const [refreshing, setRefreshing] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const fetchDashboardData = async () => {
-    try {
-      // Obtener presupuestos con sus gastos
-      const { data: budgetsData, error: budgetsError } = await supabase
-        .from('budgets')
-        .select(`
-          id,
-          name,
-          amount,
-          active,
-          expenses(amount)
-        `)
-        .eq('user_id', user?.id);
-
-      if (budgetsError) throw budgetsError;
-
-      // Obtener gastos recientes
-      const { data: expensesData, error: expensesError } = await supabase
-        .from('expenses')
-        .select(`
-          id,
-          description,
-          amount,
-          category,
-          created_at,
-          budgets(name)
-        `)
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (expensesError) throw expensesError;
-
-      // Procesar datos
-      const activeBudgets = budgetsData?.filter(b => b.active) || [];
-      const totalBudget = activeBudgets.reduce((sum, budget) => sum + budget.amount, 0);
-      const totalSpent = activeBudgets.reduce((sum, budget) => {
-        const spent = budget.expenses?.reduce((expenseSum: number, expense: any) => expenseSum + expense.amount, 0) || 0;
-        return sum + spent;
-      }, 0);
-
-      const budgetsWithSpent = activeBudgets.map(budget => ({
-        ...budget,
-        spent: budget.expenses?.reduce((sum: number, expense: any) => sum + expense.amount, 0) || 0,
-      }));
-
-      const recentExpenses = expensesData?.map(expense => ({
-        ...expense,
-        budget: expense.budgets,
-      })) || [];
-
-      setData({
-        totalBudget,
-        totalSpent,
-        activeBudgets: activeBudgets.length,
-        recentExpenses,
-        budgets: budgetsWithSpent,
-      });
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      Alert.alert('Error', 'No se pudieron cargar los datos');
-    }
-  };
-
-  const loadData = async () => {
-    setLoading(true);
-    await fetchDashboardData();
-    setLoading(false);
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchDashboardData();
-    setRefreshing(false);
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -143,437 +35,458 @@ export default function DashboardScreen() {
       '¿Estás seguro de que quieres cerrar sesión?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Cerrar Sesión', onPress: signOut },
+        { text: 'Cerrar Sesión', onPress: signOut }
       ]
     );
   };
 
-  const getCategoryIcon = (category: string) => {
-    const icons: { [key: string]: string } = {
-      'Alimentación': 'restaurant-outline',
-      'Transporte': 'car-outline',
-      'Entretenimiento': 'game-controller-outline',
-      'Salud': 'medical-outline',
-      'Educación': 'school-outline',
-      'Compras': 'bag-outline',
-      'Servicios': 'construct-outline',
-      'Otros': 'ellipsis-horizontal-outline',
-    };
-    return icons[category] || 'ellipsis-horizontal-outline';
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchBudgets(), fetchExpenses()]);
+    setRefreshing(false);
   };
 
-  const renderExpenseItem = ({ item }: { item: Expense }) => (
-    <View style={styles.expenseItem}>
-      <View style={styles.expenseIcon}>
-        <Ionicons
-          name={getCategoryIcon(item.category) as any}
-          size={20}
-          color="#1e3a8a"
-        />
-      </View>
-      <View style={styles.expenseDetails}>
-        <Text style={styles.expenseDescription}>{item.description}</Text>
-        <Text style={styles.expenseCategory}>
-          {item.category} • {item.budget?.name}
-        </Text>
-        <Text style={styles.expenseDate}>
-          {new Date(item.created_at).toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
-      </View>
-      <Text style={styles.expenseAmount}>-${item.amount.toFixed(2)}</Text>
-    </View>
-  );
-
-  const renderBudgetItem = ({ item }: { item: Budget }) => {
-    const percentage = (item.spent / item.amount) * 100;
-    const isOverBudget = percentage > 100;
-    
-    return (
-      <View style={styles.budgetItem}>
-        <Text style={styles.budgetName}>{item.name}</Text>
-        <View style={styles.budgetProgress}>
-          <View style={styles.budgetProgressBar}>
-            <View
-              style={[
-                styles.budgetProgressFill,
-                {
-                  width: `${Math.min(percentage, 100)}%`,
-                  backgroundColor: isOverBudget ? '#ef4444' : percentage > 80 ? '#f59e0b' : '#10b981',
-                },
-              ]}
-            />
-          </View>
-          <Text style={[styles.budgetPercentage, isOverBudget && { color: '#ef4444' }]}>
-            {percentage.toFixed(0)}%
-          </Text>
-        </View>
-        <View style={styles.budgetAmounts}>
-          <Text style={styles.budgetSpent}>${item.spent.toFixed(2)}</Text>
-          <Text style={styles.budgetTotal}>/ ${item.amount.toFixed(2)}</Text>
-        </View>
-      </View>
-    );
+  const getTotalExpenses = () => {
+    return expenses.reduce((total, expense) => total + expense.amount, 0);
   };
 
-  if (loading) {
+  const getTotalBudgets = () => {
+    return budgets.reduce((total, budget) => total + budget.total_amount, 0);
+  };
+
+  const getRecentExpenses = () => {
+    return expenses.slice(0, 5);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-HN', {
+      style: 'currency',
+      currency: 'HNL'
+    }).format(amount);
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-HN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  if (budgetsLoading || expensesLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1e3a8a" />
-        <Text style={styles.loadingText}>Cargando datos...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1e3a8a" />
+          <Text style={styles.loadingText}>Cargando...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  const remainingBudget = data.totalBudget - data.totalSpent;
-  const spentPercentage = data.totalBudget > 0 ? (data.totalSpent / data.totalBudget) * 100 : 0;
-
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>¡Hola!</Text>
-          <Text style={styles.userName}>{user?.email}</Text>
-        </View>
-        <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
-          <Ionicons name="log-out-outline" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
-
+    <SafeAreaView style={styles.container}>
       <ScrollView
-        style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         showsVerticalScrollIndicator={false}
       >
-        {/* Resumen General */}
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.welcomeText}>Hola, {user?.email?.split('@')[0]}</Text>
+            <Text style={styles.dateText}>
+              {new Date().toLocaleDateString('es-HN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
+            <Ionicons name="log-out-outline" size={24} color="#1e3a8a" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Summary Cards */}
         <View style={styles.summaryContainer}>
-          <Text style={styles.sectionTitle}>Resumen General</Text>
-          <View style={styles.summaryCards}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Presupuesto Total</Text>
-              <Text style={styles.summaryAmount}>${data.totalBudget.toFixed(2)}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Total Gastado</Text>
-              <Text style={[styles.summaryAmount, { color: '#ef4444' }]}>
-                ${data.totalSpent.toFixed(2)}
-              </Text>
-            </View>
+          <View style={styles.summaryCard}>
+            <Ionicons name="wallet-outline" size={24} color="#1e3a8a" />
+            <Text style={styles.summaryAmount}>{formatCurrency(getTotalBudgets())}</Text>
+            <Text style={styles.summaryLabel}>Total Presupuestos</Text>
           </View>
-          <View style={styles.summaryCards}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Disponible</Text>
-              <Text
-                style={[
-                  styles.summaryAmount,
-                  { color: remainingBudget >= 0 ? '#10b981' : '#ef4444' },
-                ]}
+          <View style={styles.summaryCard}>
+            <Ionicons name="card-outline" size={24} color="#dc2626" />
+            <Text style={styles.summaryAmount}>{formatCurrency(getTotalExpenses())}</Text>
+            <Text style={styles.summaryLabel}>Total Gastos</Text>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActionsContainer}>
+          <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('Budget')}
+            >
+              <Ionicons name="add-circle-outline" size={32} color="#1e3a8a" />
+              <Text style={styles.quickActionText}>Crear Presupuesto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => {
+                if (budgets.length > 0) {
+                  navigation.navigate('AddExpense', { budgetId: budgets[0].id });
+                } else {
+                  Alert.alert('Sin presupuestos', 'Primero debes crear un presupuesto para agregar gastos.');
+                }
+              }}
+            >
+              <Ionicons name="receipt-outline" size={32} color="#1e3a8a" />
+              <Text style={styles.quickActionText}>Agregar Gasto</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Budgets Overview */}
+        <View style={styles.budgetsContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Mis Presupuestos</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Budget')}>
+              <Text style={styles.viewAllText}>Ver todos</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {budgets.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="wallet-outline" size={48} color="#9ca3af" />
+              <Text style={styles.emptyStateText}>No tienes presupuestos aún</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Crea tu primer presupuesto para comenzar a gestionar tus gastos
+              </Text>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => navigation.navigate('Budget')}
               >
-                ${remainingBudget.toFixed(2)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Presupuestos Activos</Text>
-              <Text style={styles.summaryAmount}>{data.activeBudgets}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Progress General */}
-        <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Progreso General</Text>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${Math.min(spentPercentage, 100)}%`,
-                    backgroundColor: spentPercentage > 100 ? '#ef4444' : spentPercentage > 80 ? '#f59e0b' : '#10b981',
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.progressText}>{spentPercentage.toFixed(1)}%</Text>
-          </View>
-        </View>
-
-        {/* Presupuestos Activos */}
-        {data.budgets.length > 0 && (
-          <View style={styles.budgetsSection}>
-            <Text style={styles.sectionTitle}>Presupuestos Activos</Text>
-            <FlatList
-              data={data.budgets}
-              renderItem={renderBudgetItem}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-            />
-          </View>
-        )}
-
-        {/* Gastos Recientes */}
-        <View style={styles.expensesSection}>
-          <Text style={styles.sectionTitle}>Gastos Recientes</Text>
-          {data.recentExpenses.length === 0 ? (
-            <View style={styles.noExpensesContainer}>
-              <Ionicons name="receipt-outline" size={48} color="#cbd5e1" />
-              <Text style={styles.noExpensesText}>No hay gastos registrados</Text>
-              <Text style={styles.noExpensesSubtext}>
-                Agrega tu primer gasto para empezar a trackear
-              </Text>
+                <Text style={styles.createButtonText}>Crear Presupuesto</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <FlatList
-              data={data.recentExpenses}
-              renderItem={renderExpenseItem}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-            />
+            budgets.slice(0, 3).map((budget) => {
+              const usagePercentage = getBudgetUsagePercentage(budget);
+              const isOverBudget = usagePercentage > 100;
+              
+              return (
+                <TouchableOpacity
+                  key={budget.id}
+                  style={styles.budgetCard}
+                  onPress={() => navigation.navigate('BudgetDetail', { budgetId: budget.id })}
+                >
+                  <View style={styles.budgetHeader}>
+                    <Text style={styles.budgetName}>{budget.name}</Text>
+                    <Text style={styles.budgetCategory}>{budget.category}</Text>
+                  </View>
+                  <View style={styles.budgetAmount}>
+                    <Text style={styles.budgetSpent}>
+                      {formatCurrency(budget.current_amount)}
+                    </Text>
+                    <Text style={styles.budgetTotal}>
+                      de {formatCurrency(budget.total_amount)}
+                    </Text>
+                  </View>
+                  <View style={styles.progressBarContainer}>
+                    <View
+                      style={[
+                        styles.progressBar,
+                        {
+                          width: `${Math.min(usagePercentage, 100)}%`,
+                          backgroundColor: isOverBudget ? '#dc2626' : '#1e3a8a'
+                        }
+                      ]}
+                    />
+                  </View>
+                  <Text style={[
+                    styles.budgetPercentage,
+                    { color: isOverBudget ? '#dc2626' : '#1e3a8a' }
+                  ]}>
+                    {usagePercentage.toFixed(1)}% usado
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+
+        {/* Recent Expenses */}
+        <View style={styles.expensesContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Gastos Recientes</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Expenses')}>
+              <Text style={styles.viewAllText}>Ver todos</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {expenses.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={48} color="#9ca3af" />
+              <Text style={styles.emptyStateText}>No tienes gastos registrados</Text>
+            </View>
+          ) : (
+            getRecentExpenses().map((expense) => (
+              <View key={expense.id} style={styles.expenseItem}>
+                <View style={styles.expenseIcon}>
+                  <Ionicons name="receipt" size={20} color="#1e3a8a" />
+                </View>
+                <View style={styles.expenseDetails}>
+                  <Text style={styles.expenseDescription}>{expense.description}</Text>
+                  <Text style={styles.expenseCategory}>{expense.category}</Text>
+                  <Text style={styles.expenseDate}>{formatDate(expense.date)}</Text>
+                </View>
+                <Text style={styles.expenseAmount}>
+                  -{formatCurrency(expense.amount)}
+                </Text>
+              </View>
+            ))
           )}
         </View>
       </ScrollView>
-
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setModalVisible(true)}
-      >
-        <Ionicons name="add" size={28} color="white" />
-      </TouchableOpacity>
-
-      <AddExpenseModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onExpenseAdded={() => {
-          setModalVisible(false);
-          fetchDashboardData();
-        }}
-      />
-    </View>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#1e3a8a',
-  },
-  greeting: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    marginTop: 2,
-  },
-  signOutButton: {
-    padding: 8,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#64748b',
   },
-  content: {
+  scrollView: {
     flex: 1,
   },
-  sectionTitle: {
-    fontSize: 20,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#ffffff',
+    marginBottom: 8,
+  },
+  welcomeText: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#1e293b',
-    marginBottom: 16,
+    textTransform: 'capitalize',
+  },
+  dateText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 4,
+    textTransform: 'capitalize',
+  },
+  signOutButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
   },
   summaryContainer: {
-    padding: 20,
-  },
-  summaryCards: {
     flexDirection: 'row',
-    marginBottom: 12,
+    paddingHorizontal: 20,
+    gap: 12,
+    marginBottom: 24,
   },
   summaryCard: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#ffffff',
+    padding: 20,
     borderRadius: 12,
-    padding: 16,
-    marginRight: 12,
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 4,
+    shadowRadius: 4,
+    elevation: 3,
   },
   summaryAmount: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1e293b',
+    marginTop: 8,
   },
-  progressSection: {
+  summaryLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  quickActionsContainer: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  progressBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 4,
-    marginRight: 12,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#1e293b',
-    minWidth: 50,
+    marginBottom: 16,
   },
-  budgetsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
+  quickActions: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  budgetItem: {
-    backgroundColor: 'white',
+  quickActionButton: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    padding: 20,
     borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickActionText: {
+    fontSize: 14,
+    color: '#1e293b',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  budgetsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: '#1e3a8a',
+    fontWeight: '500',
+  },
+  emptyState: {
+    backgroundColor: '#ffffff',
+    padding: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 12,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  createButton: {
+    backgroundColor: '#1e3a8a',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  createButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  budgetCard: {
+    backgroundColor: '#ffffff',
     padding: 16,
+    borderRadius: 12,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  budgetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   budgetName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1e293b',
-    marginBottom: 8,
   },
-  budgetProgress: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  budgetProgressBar: {
-    flex: 1,
-    height: 6,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 3,
-    marginRight: 8,
-  },
-  budgetProgressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  budgetPercentage: {
-    fontSize: 14,
-    fontWeight: '500',
+  budgetCategory: {
+    fontSize: 12,
     color: '#64748b',
-    minWidth: 35,
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  budgetAmounts: {
+  budgetAmount: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    marginBottom: 12,
   },
   budgetSpent: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ef4444',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
   },
   budgetTotal: {
     fontSize: 14,
     color: '#64748b',
+    marginLeft: 4,
   },
-  expensesSection: {
+  progressBarContainer: {
+    height: 6,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 3,
+    marginBottom: 8,
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  budgetPercentage: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  expensesContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-  noExpensesContainer: {
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  noExpensesText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginTop: 12,
-  },
-  noExpensesSubtext: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 4,
-    textAlign: 'center',
+    marginBottom: 24,
   },
   expenseItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#ffffff',
     padding: 16,
+    borderRadius: 12,
     marginBottom: 8,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
@@ -581,8 +494,8 @@ const styles = StyleSheet.create({
   expenseIcon: {
     width: 40,
     height: 40,
+    backgroundColor: '#f1f5f9',
     borderRadius: 20,
-    backgroundColor: '#e0f2fe',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -591,42 +504,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   expenseDescription: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
     color: '#1e293b',
-    marginBottom: 2,
   },
   expenseCategory: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#64748b',
-    marginBottom: 2,
+    marginTop: 2,
   },
   expenseDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94a3b8',
+    marginTop: 2,
   },
   expenseAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#ef4444',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1e3a8a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626',
   },
 });
+
+export default DashboardScreen;
